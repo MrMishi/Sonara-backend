@@ -1,6 +1,8 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 import yt_dlp
+import requests
 
 app = FastAPI()
 
@@ -32,13 +34,18 @@ def download_audio(url: str):
             if not audio_url:
                 audio_url = info.get('url')
 
-            return {
-                "status": "success",
-                "title": info.get('title'),
-                "uploader": info.get('uploader'),
-                "thumbnail": info.get('thumbnail'),
-                "download_url": audio_url
-            }
+            # Hacer proxy del audio para saltarse bloqueos CORS de YouTube
+            req = requests.get(audio_url, stream=True)
+            
+            return StreamingResponse(
+                req.iter_content(chunk_size=1024 * 64),
+                media_type="audio/mpeg",
+                headers={
+                    "Content-Disposition": f'attachment; filename="{info.get("title", "audio")}.mp3"',
+                    "X-Audio-Title": info.get('title', ''),
+                    "X-Audio-Thumbnail": info.get('thumbnail', '')
+                }
+            )
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
-      
+            
