@@ -18,23 +18,29 @@ app.add_middleware(
 def download_audio(url: str):
     try:
         ydl_opts = {
-            'format': 'bestaudio/best',
+            'format': 'ba/b',  # Busca bestaudio, y si no lo encuentra, toma el formato general disponible
             'quiet': True,
             'no_warnings': True,
+            'nocheckcertificate': True,
         }
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
             
             audio_url = None
+            # Intentar obtener el stream solo de audio
             for fmt in info.get('formats', []):
-                if fmt.get('vcodec') == 'none' and fmt.get('acodec') != 'none':
+                if fmt.get('acodec') != 'none' and fmt.get('vcodec') == 'none':
                     audio_url = fmt.get('url')
                     break
             
+            # Si no hay stream separado, tomar la URL directa del video/audio
             if not audio_url:
                 audio_url = info.get('url')
 
-            # Hacer proxy del audio para saltarse bloqueos CORS de YouTube
+            if not audio_url:
+                raise HTTPException(status_code=400, detail="No se pudo extraer la URL de audio")
+
+            # Transferir el stream directo al cliente para evitar bloqueos CORS
             req = requests.get(audio_url, stream=True)
             
             return StreamingResponse(
