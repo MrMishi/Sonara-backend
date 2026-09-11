@@ -1,3 +1,6 @@
 fastapi
 uvicorn
+requests
 yt-dlp
+pykakasi
+pydantic
