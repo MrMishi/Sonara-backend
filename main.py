@@ -1,8 +1,10 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 import yt_dlp
 import requests
+import pykakasi
 
 app = FastAPI()
 
@@ -14,11 +16,36 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Inicializar pykakasi para conversión a Romaji
+kks = pykakasi.kakasi()
+
+class TranscribeRequest(BaseModel):
+    text: str
+
+@app.post("/api/transcribe")
+def transcribe_to_romaji(data: TranscribeRequest):
+    try:
+        if not data.text.strip():
+            raise HTTPException(status_code=400, detail="El texto no puede estar vacío")
+        
+        # Procesa el texto en japonés
+        result = kks.convert(data.text)
+        
+        # Une la pronunciación en Romaji separada por espacios
+        romaji_text = " ".join([item['hepburn'] for item in result])
+        
+        return {
+            "original": data.text,
+            "romaji": romaji_text
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/api/download")
 def download_audio(url: str):
     try:
         ydl_opts = {
-            'format': 'ba/b',  # Busca bestaudio, y si no lo encuentra, toma el formato general disponible
+            'format': 'ba/b',
             'quiet': True,
             'no_warnings': True,
             'nocheckcertificate': True,
@@ -27,20 +54,17 @@ def download_audio(url: str):
             info = ydl.extract_info(url, download=False)
             
             audio_url = None
-            # Intentar obtener el stream solo de audio
             for fmt in info.get('formats', []):
                 if fmt.get('acodec') != 'none' and fmt.get('vcodec') == 'none':
                     audio_url = fmt.get('url')
                     break
             
-            # Si no hay stream separado, tomar la URL directa del video/audio
             if not audio_url:
                 audio_url = info.get('url')
 
             if not audio_url:
                 raise HTTPException(status_code=400, detail="No se pudo extraer la URL de audio")
 
-            # Transferir el stream directo al cliente para evitar bloqueos CORS
             req = requests.get(audio_url, stream=True)
             
             return StreamingResponse(
@@ -54,4 +78,4 @@ def download_audio(url: str):
             )
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
-            
+        
